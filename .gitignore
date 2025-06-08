@@ -1,0 +1,20 @@
+# Ignore all .log files
+*.log
+
+# Ignore the 'temp' directory
+/temp/
+
+# Ignore specific files
+mysecret.txt
+config.local.js
+
+# Ignore all .zip files
+*.zip
+
+# Ignore the __pycache__ directory (relevant to your screenshot)
+__pycache__/
+
+# PyInstaller build artifacts
+build/
+dist/
+*.spec
