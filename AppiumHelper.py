@@ -1,12 +1,13 @@
 # AppiumHelper.py
 import sys
-from PyQt5.QtCore import QThread, pyqtSignal
+import re
+import json
 import asyncio
 import unittest
 import threading
-from TestRunner import AppTest  # Import AppTest from TestRunner
-import re
-import json
+from PyQt5.QtCore import QThread, pyqtSignal
+from TestRunner import AppTest  # Custom test class
+
 
 class AppiumHelper(QThread):
     output_signal = pyqtSignal(str)
@@ -20,14 +21,14 @@ class AppiumHelper(QThread):
         self.fileTest = file_py_name
         self.hasApp = hasApp
         self.reset_app = reset_app
-        self.result = None  # Store test result
+        self.result = None
 
     def stop(self):
         self.appium_manager.stop_appium()
 
     def run_tests_with_timeout(self, suite, timeout=60):
         """
-        Runs the test suite and stops execution if it hangs.
+        Run test suite in a separate thread with timeout.
         """
         def run_tests():
             runner = unittest.TextTestRunner()
@@ -38,15 +39,46 @@ class AppiumHelper(QThread):
         test_thread.join(timeout)
 
         if test_thread.is_alive():
-            self.output_signal.emit("⚠️ Test timed out! Stopping Appium...")
+            self.output_signal.emit("⚠️ Test timed out. Stopping Appium...")
             self.appium_manager.stop_appium()
-            raise Exception("Test execution timed out and was forcefully stopped.")
+            raise TimeoutError("Test execution timed out.")
+
+    def override_sys_argv(self):
+        """
+        Sets sys.argv for AppTest class (used inside unittest).
+        """
+        sys.argv = [
+            "test",  # dummy script name
+            self.selected_device,
+            self.file_apk_name,
+            self.android_version,
+            str(self.hasApp),
+            self.fileTest,
+            self.reset_app
+        ]
+
+    def emit_failure_messages(self):
+        """
+        Emits cleaned up failure/error messages from the test result.
+        """
+        total_failures = len(self.result.failures)
+        total_errors = len(self.result.errors)
+
+        for test, err in self.result.failures + self.result.errors:
+            response_match = re.search(r'"response":\s*"(.+?)"', err)
+            if response_match:
+                message = response_match.group(1)
+            else:
+                lines = err.strip().splitlines()
+                message = lines[-1] if lines else "Unknown error"
+            self.output_signal.emit(f"⚠️ {test.id()}: {message}")
+
+        self.output_signal.emit(f"❌ Total Failures: {total_failures}, Errors: {total_errors}")
+        self.output_signal.emit("⛔ Test failed.")
 
     def run(self):
         try:
             self.output_signal.emit("🚀 Starting Appium server...")
-
-            # Start the Appium server
             appium_started = asyncio.run(self.appium_manager.start_appium())
 
             if not appium_started:
@@ -54,43 +86,24 @@ class AppiumHelper(QThread):
                 return
 
             self.output_signal.emit("✅ Appium server started successfully.")
-            self.output_signal.emit("🪄 Running test...")
+            self.output_signal.emit("🧪 Running test...")
 
-            # Override sys.argv values to match expected inputs for AppTest
-            sys.argv = ["test", self.selected_device, self.file_apk_name, self.android_version, str(self.hasApp), self.fileTest, self.reset_app]
+            self.override_sys_argv()
 
-            # Load and run AppTest directly
             suite = unittest.TestSuite()
             suite.addTest(unittest.TestLoader().loadTestsFromTestCase(AppTest))
 
-            # Run the test suite with a timeout
-            self.run_tests_with_timeout(suite, timeout=60)  
+            self.run_tests_with_timeout(suite, timeout=60)
 
-            # Handle test results
-            if len(self.result.failures) == 0 or self.result.wasSuccessful():
-                self.output_signal.emit("✅ Test finished successfully.")
+            if self.result.wasSuccessful():
+                self.output_signal.emit("✅ Test completed successfully.")
             else:
-                failures = len(self.result.failures)
-                errors = len(self.result.errors)
-                self.output_signal.emit(f"❌ Test encountered {failures + errors} failures/errors.")
+                self.emit_failure_messages()
 
-                # Log specific failures with extracted "response" value
-                for test, err in self.result.failures + self.result.errors:
-                    response_match = re.search(r'"response":\s*"(.+?)"', err)  # Extract response field
-                    error_message = response_match.group(1) if response_match else err.split("\n")[-2]
-                    self.output_signal.emit(f"⚠️ {test}: {error_message}")
+        except Exception as e:
+            self.output_signal.emit(f"❌ Exception occurred: {e}")
 
-                # Stop Appium on failure
-                self.output_signal.emit("⛔ Test failed!")
-                self.appium_manager.stop_appium()
-
-            # Stop the Appium server after test completion
+        finally:
             self.output_signal.emit("🛑 Stopping Appium server...")
             self.appium_manager.stop_appium()
             self.output_signal.emit("✅ Appium server stopped.")
-
-        except Exception as e:
-            self.output_signal.emit(f"❌ Test execution failed: {e}")
-            self.appium_manager.stop_appium()
-            self.output_signal.emit("⚠️ Appium server stopped due to an error.")
-            raise  # Re-raise exception for proper error handling
