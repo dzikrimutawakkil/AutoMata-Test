@@ -21,7 +21,8 @@ class AppiumManager:
                 ], check=True)
 
             # Launch Appium server (log output to file for debugging)
-            log_file = open("appium_server.log", "w")
+            log_path = os.path.join(os.path.expanduser("~"), "Documents", "appium_server.log")
+            log_file = open(log_path, "w")
             self.appium_process = subprocess.Popen(
                 ["appium"],
                 stdout=log_file,
