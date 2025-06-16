@@ -1,4 +1,5 @@
 # AppiumHelper.py
+import subprocess
 import sys
 import re
 import json
@@ -76,6 +77,8 @@ class AppiumHelper(QThread):
         self.output_signal.emit(f"❌ Total Failures: {total_failures}, Errors: {total_errors}")
         self.output_signal.emit("⛔ Test failed.")
 
+    # AppiumHelper.py
+
     def run(self):
         try:
             self.output_signal.emit("🚀 Starting Appium server...")
@@ -93,7 +96,9 @@ class AppiumHelper(QThread):
             suite = unittest.TestSuite()
             suite.addTest(unittest.TestLoader().loadTestsFromTestCase(AppTest))
 
-            self.run_tests_with_timeout(suite, timeout=60)
+            # --- CHANGE THIS LINE ---
+            # Increase the timeout from 60 seconds to 300 (5 minutes)
+            self.run_tests_with_timeout(suite, timeout=300)
 
             if self.result.wasSuccessful():
                 self.output_signal.emit("✅ Test completed successfully.")
@@ -107,3 +112,17 @@ class AppiumHelper(QThread):
             self.output_signal.emit("🛑 Stopping Appium server...")
             self.appium_manager.stop_appium()
             self.output_signal.emit("✅ Appium server stopped.")
+            
+            # --- NEW FINAL CLEANUP BLOCK ---
+            # This runs after every test to guarantee a clean state
+            self.output_signal.emit("🧹 Post-test cleanup: Removing forwards and stopping app...")
+            try:
+                # Force stop the app if it was an installed app test
+                if self.hasApp:
+                    subprocess.run(['adb', '-s', self.selected_device, 'shell', 'am', 'force-stop', self.file_apk_name], capture_output=True)
+                # Always remove all port forwards
+                subprocess.run(['adb', 'forward', '--remove-all'], capture_output=True)
+                self.output_signal.emit("✅ Final cleanup complete.")
+            except Exception as e:
+                self.output_signal.emit(f"⚠️ Note: Error during final cleanup: {e}")
+
