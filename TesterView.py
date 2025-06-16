@@ -149,6 +149,9 @@ class TesterView(QWidget):
                     selected_device, app, android_version, has_app, self.reset_app
                 )
                 self.test_runner_thread.output_signal.connect(self.append_output)
+
+                self.test_runner_thread.finished.connect(self.on_test_finished)
+
                 self.test_runner_thread.start()
 
                 self.run_button.setEnabled(False)
@@ -221,3 +224,12 @@ class TesterView(QWidget):
         if self.test_runner_thread:
             self.test_runner_thread.stop()
         event.accept()
+
+    def on_test_finished(self):
+        """
+        This slot is called when the TestRunnerThread has finished.
+        """
+        self.output.append("Automation thread has finished.")
+        self.run_button.setEnabled(True)
+        self.stop_button.setEnabled(False)
+        self.test_runner_thread = None
