@@ -12,7 +12,7 @@ class AppTest(unittest.TestCase):
     def setUp(self):
         # Get arguments
         deviceName = sys.argv[1]
-        app_identifier = sys.argv[2]
+        self.app_identifier = sys.argv[2]
         platformV = sys.argv[3]
         hasApp = sys.argv[4]
         fileDir = sys.argv[5]
@@ -27,8 +27,8 @@ class AppTest(unittest.TestCase):
                 'platformVersion': platformV,
                 'deviceName': deviceName,
                 'automationName': 'Flutter',
-                'appPackage': app_identifier,
-                'appActivity': app_identifier + '.MainActivity',
+                'appPackage': self.app_identifier,
+                'appActivity': self.app_identifier + '.MainActivity',
                 'noReset': True # Let AppiumHelper handle resets
             }
         else:
@@ -37,7 +37,7 @@ class AppTest(unittest.TestCase):
                 'platformVersion': platformV,
                 'deviceName': deviceName,
                 'automationName': 'Flutter',
-                'appium:app': app_identifier
+                'appium:app': self.app_identifier
             }
 
         url = 'http://localhost:4723'
@@ -46,9 +46,26 @@ class AppTest(unittest.TestCase):
         self.driver.execute_script("flutter:waitForFirstFrame")
 
     def tearDown(self):
-        # Simple teardown, the main cleanup is in AppiumHelper
+        print("--- Starting Teardown ---")
+        
+        # 1. Terminate the application on the device
+        try:
+            # We can only terminate if we have a package name, not a file path.
+            # self.app_identifier will be the package name in both hasApp=true and hasApp=false modes now.
+            if self.app_identifier and 'com.' in self.app_identifier:
+                 print(f"Closing application with package name: {self.app_identifier}...")
+                 self.driver.terminate_app(self.app_identifier)
+                 print("Application closed.")
+        except Exception as e:
+            print(f"Note: Could not terminate the app. It may have already closed. Error: {e}")
+
+        # 2. End the Appium session
         if self.driver:
+            print("Quitting driver session...")
             self.driver.quit()
+            
+        print("--- Teardown Complete ---")
+            
     def wait_for_element(self, key):
         try:
             self.driver.execute_script('flutter:waitFor', self.finder.by_value_key(key), 30000)
