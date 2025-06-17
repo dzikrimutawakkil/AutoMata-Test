@@ -61,21 +61,29 @@ class AppiumHelper(QThread):
     def emit_failure_messages(self):
         """
         Emits cleaned up failure/error messages from the test result.
+        It now treats connection errors as a successful manual stop.
         """
-        total_failures = len(self.result.failures)
-        total_errors = len(self.result.errors)
-
+        is_manual_stop = False
         for test, err in self.result.failures + self.result.errors:
-            response_match = re.search(r'"response":\s*"(.+?)"', err)
-            if response_match:
-                message = response_match.group(1)
-            else:
+            # Check for specific errors that indicate the server was killed by the user
+            if 'ConnectionResetError' in err or 'MaxRetryError' in err or 'Connection refused' in err:
+                is_manual_stop = True
+                break  # We found the reason, no need to check other errors
+
+        if is_manual_stop:
+            self.output_signal.emit("✅ Test successfully stopped by user.")
+        else:
+            # If it wasn't a manual stop, report the real test failures
+            self.output_signal.emit("⛔ Test failed with the following errors:")
+            total_failures = len(self.result.failures)
+            total_errors = len(self.result.errors)
+
+            for test, err in self.result.failures + self.result.errors:
                 lines = err.strip().splitlines()
                 message = lines[-1] if lines else "Unknown error"
-            self.output_signal.emit(f"⚠️ {test.id()}: {message}")
-
-        self.output_signal.emit(f"❌ Total Failures: {total_failures}, Errors: {total_errors}")
-        self.output_signal.emit("⛔ Test failed.")
+                self.output_signal.emit(f"⚠️ {test.id()}: {message}")
+            
+            self.output_signal.emit(f"❌ Total Failures: {total_failures}, Errors: {total_errors}")
 
     # AppiumHelper.py
 
@@ -109,20 +117,22 @@ class AppiumHelper(QThread):
             self.output_signal.emit(f"❌ Exception occurred: {e}")
 
         finally:
-            self.output_signal.emit("🛑 Stopping Appium server...")
+            self.output_signal.emit("⏳ Stopping Appium server...")
             self.appium_manager.stop_appium()
-            self.output_signal.emit("✅ Appium server stopped.")
+            # self.output_signal.emit("🛑 Appium server stopped.")
             
             # --- NEW FINAL CLEANUP BLOCK ---
             # This runs after every test to guarantee a clean state
-            self.output_signal.emit("🧹 Post-test cleanup: Removing forwards and stopping app...")
+            # self.output_signal.emit("🧹 Post-test cleanup: Removing forwards and stopping app...")
             try:
                 # Force stop the app if it was an installed app test
                 if self.hasApp:
                     subprocess.run(['adb', '-s', self.selected_device, 'shell', 'am', 'force-stop', self.file_apk_name], capture_output=True)
                 # Always remove all port forwards
                 subprocess.run(['adb', 'forward', '--remove-all'], capture_output=True)
-                self.output_signal.emit("✅ Final cleanup complete.")
+                # self.output_signal.emit("✅ Final cleanup complete.")
             except Exception as e:
                 self.output_signal.emit(f"⚠️ Note: Error during final cleanup: {e}")
+            finally :
+                self.output_signal.emit("🛑 Appium server stopped.")
 

@@ -46,24 +46,18 @@ class AppTest(unittest.TestCase):
         self.driver.execute_script("flutter:waitForFirstFrame")
 
     def tearDown(self):
+        """
+        Gracefully quits the driver. It will ignore connection errors
+        that happen if the Appium server was already killed by the Stop button.
+        """
         print("--- Starting Teardown ---")
-        
-        # 1. Terminate the application on the device
-        try:
-            # We can only terminate if we have a package name, not a file path.
-            # self.app_identifier will be the package name in both hasApp=true and hasApp=false modes now.
-            if self.app_identifier and 'com.' in self.app_identifier:
-                 print(f"Closing application with package name: {self.app_identifier}...")
-                 self.driver.terminate_app(self.app_identifier)
-                 print("Application closed.")
-        except Exception as e:
-            print(f"Note: Could not terminate the app. It may have already closed. Error: {e}")
-
-        # 2. End the Appium session
         if self.driver:
-            print("Quitting driver session...")
-            self.driver.quit()
-            
+            try:
+                self.driver.quit()
+                print("Driver session quit successfully.")
+            except Exception as e:
+                # This error is expected if the server was already force-stopped.
+                print(f"Note: Error during driver.quit() is expected after a manual stop.")
         print("--- Teardown Complete ---")
             
     def wait_for_element(self, key):

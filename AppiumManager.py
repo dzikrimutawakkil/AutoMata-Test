@@ -12,22 +12,28 @@ class AppiumManager:
 
     async def start_appium(self):
         try:
-            # Allow PowerShell scripts (Windows only)
-            if sys.platform == "win32":
-                subprocess.run([
-                    "powershell", 
-                    "-Command", 
-                    "Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force"
-                ], check=True)
+            # For Windows, start the process in a new process group so we can kill it reliably.
+            # For other OSes, preexec_fn is used for the same purpose.
+            creation_flags = 0
+            preexec_fn = None
 
-            # Launch Appium server (log output to file for debugging)
+            if sys.platform == "win32":
+                creation_flags = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                preexec_fn = os.setsid
+
+            # Launch Appium server
             log_path = os.path.join(os.path.expanduser("~"), "Documents", "appium_server.log")
             log_file = open(log_path, "w")
+            
+            # Note the addition of creationflags/preexec_fn
             self.appium_process = subprocess.Popen(
                 ["appium"],
                 stdout=log_file,
                 stderr=subprocess.STDOUT,
-                shell=True if sys.platform == "win32" else False
+                shell=True if sys.platform == "win32" else False,
+                creationflags=creation_flags,
+                preexec_fn=preexec_fn
             )
 
             # Wait until server is ready
@@ -61,12 +67,24 @@ class AppiumManager:
 
     def stop_appium(self):
         if self.appium_process and self.appium_process.poll() is None:
+            print("🛑 Forcefully stopping Appium server and its subprocesses...")
             try:
-                self.appium_process.terminate()
+                if sys.platform == "win32":
+                    # Use taskkill on Windows to kill the entire process tree
+                    subprocess.run(
+                        ["taskkill", "/F", "/T", "/PID", str(self.appium_process.pid)],
+                        check=True
+                    )
+                else:
+                    # Use os.killpg on Unix-like systems
+                    os.killpg(os.getpgid(self.appium_process.pid), signal.SIGTERM)
+                
                 self.appium_process.wait(timeout=10)
-                print("🛑 Appium server stopped.")
-            except subprocess.TimeoutExpired:
-                print("⚠️ Timeout expired, but skipping kill() for now...")
+                print("✅ Appium server stopped.")
+
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError, PermissionError, OSError) as e:
+                print(f"⚠️ An error occurred while stopping the Appium server, but continuing anyway: {e}")
             finally:
                 self.appium_process = None
-
+        else:
+            print("Appium server process not found or already stopped.")
